@@ -1,0 +1,19 @@
+{
+  "//note": "This file contains user configuration settings",
+  "comPort": "COM3",
+  "baudRate": 9600,
+  "hidDevice": "RC-28",
+  "vendorId": "0x0C26",
+  "//note": "Dependent upon firmware level the productID could be different",
+  "productId": "0x001E",
+  "longPressThreshold": 500,
+  "buttons": {
+    "F1": 2,
+    "F2": 4,
+    "TX": 1
+  },
+  "knob": {
+    "CW": 1,
+    "CCW": 2
+  }
+}
