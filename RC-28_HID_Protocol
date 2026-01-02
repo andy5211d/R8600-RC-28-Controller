@@ -1,27 +1,26 @@
 RC‑28 HID Protocol Specification
-Version 1.0 — January 2026  
+Version 1.2 — January 2026  
 Author: Andy
 
 Table of Contents
-1.  Overview
-2.  USB Identification
-3.  HID Output Reports
-4.  Report ID 0x01 — LED Control
-5.  LED Bitmask
-6.  HID Input Reports
-7.  Encoder Movement
-8.  Button Events
-9.  Report ID Summary
-10.  Safety Notes
-11.  Implementation Notes
+Overview
+USB Identification
+HID Output Reports
+LED Bitmask
+HID Input Reports
+Encoder Movement
+Button Events
+Report ID Summary
+Safety Notes
+Implementation Notes
 Appendix A — LED Bitmask Diagram
 Appendix B — Input Report Flowchart
 
-1.  Overview
+Overview
 The Icom RC‑28 is a USB HID device providing:
 A rotary encoder (CW/CCW)
-Three momentary buttons (TRANSMIT, F-1, F-2)
-Four LEDs (LINK, F-1, F-2, TRANSMIT)
+Three momentary buttons (TX, F1, F2)
+Four LEDs (Link, F1, F2, Tx)
 
 This document describes the reverse‑engineered HID protocol, including all known input and output report formats.
 
@@ -38,82 +37,83 @@ Code
 Byte 0 : Report ID (0x01)
 Byte 1 : LED bitmask
 Bytes 2–8 : Reserved (0x00)
+
 LED Bitmask
-Bit	Hex	LED
-0	0x01	TRANSMIT
-1	0x02	F-2
-2	0x04	F-1
-3	0x08	TRANSMIT
-4	0x10	LINK
-5	0x20	All‑LED ON override
-6	0x40	Unused
-7	0x80	Unused
+Bit	Hex	  LED
+0	  0x01	Unused (no visible LED)
+1	  0x02	F2 LED
+2	  0x04	F1 LED
+3	  0x08	Tx LED
+4	  0x10	Link LED
+5	  0x20	All‑LED override
+6	  0x40	Unused
+7	  0x80	Unused
 
 Behaviour Notes
-Bits 0–4 form a direct LED mask.
+Bits 1–4 directly control the four visible LEDs.
 Bit 5 (0x20) forces all LEDs ON, regardless of other bits.
-Bits 6–7 have no observed effect.
-Re‑sending the same mask does not toggle LEDs; the mask is absolute.
-
-Examples
-Mask	LEDs Lit
-0x00	All off
-0x01	TRANSMIT
-0x02	F-2
-0x04	F-1
-0x08	TRANSMIT
-0x10	LINK
-0x1F	LINK + TRANSMIT + F-1 + F-2
-0x20	All LEDs ON (override)
+Bit 0 (0x01) has no visible effect.
+Bits 6–7 unused.
+LED mask is absolute, not toggle‑based.
 HID Input Reports (RC‑28 → Host)
-Report ID 0x00 — Encoder Movement
+The RC‑28 uses two input report IDs:
+0x00 → encoder movement
+0x01 → button events
 
+Encoder Movement
+Report ID: 0x00  
+Byte 3 contains the direction code:
 Code
-Byte 0 : Report ID (0x00)
-Byte 3 : 0x01 = CW
-Byte 3 : 0x02 = CCW
+0x01 = CW
+0x02 = CCW
 No acceleration or multi‑step values observed.
 
-Report ID 0x01 — Button Events (TX, F1, F2)
+Button Events
+Report ID: 0x01  
+Byte 5 contains the button state code.
 
-Code
-Byte 0 : Report ID (0x01)
-Byte 5 : Button bitmask (active‑low)
-Button Bitmask (active‑low)
-Bit	Hex	Button
-0	0x01	TX
-1	0x02	F1
-2	0x04	F2
-Behaviour
-Press = bit cleared
-Release = bit set
-No auto‑repeat
+Corrected Button Behaviour
+The RC‑28 does not send a multi‑button bitmask.
 
-Long‑press handled in software (not hardware)
+Instead:
+Each button sends a unique code when pressed
+All buttons send the same code when released
+This matches the behaviour in your RC28Comm decoder.
+
+Button State Codes (active‑low)
+Button	Press Condition	Release Condition
+TX	(buttons & 0x01) == 0	(buttons == 0xFF)
+F1	(buttons & 0x02) == 0	(buttons == 0xFF)
+F2	(buttons & 0x04) == 0	(buttons == 0xFF)
+
+Important Notes
+Only one button can be active at a time.
+Pressing a button clears its bit.
+Releasing any button sets all bits high (0xFF).
+No combination presses are reported.
+
+Long‑press behaviour is implemented in software, not hardware.
 
 Report ID Summary
 Report ID	Direction	Purpose
-0x00	Input	Encoder delta
-0x01	Input	Buttons (TX, F1, F2)
+0x00	Input	Encoder delta (CW/CCW)
+0x01	Input	Button events (TX, F1, F2)
 0x01	Output	LED control
-0x02–0x06	Output	No effect
-0x07	Output	Unknown (likly firmware update trigger)
+0x02–0x06	Output	No visible effect
+0x07	Output	Unknown (avoid)
 0x08–0x0F	Output	No observed effect
 
 Safety Notes
-Avoid Report ID 0x07 (possible DFU/firmware mode).
+Avoid Report ID 0x07 (likely DFU/firmware).
 Always send 9‑byte output reports.
 Reserved bytes must be zero.
-LED mask is absolute, not toggle‑based.
+LED mask is absolute.
 
 Implementation Notes
 hid4java requires the report ID in byte 0.
-The RC‑28 accepts writes via:
-write(byte[], int, byte)
-write(byte[], int)
-write(byte[])
-Reflection recommended for cross‑platform compatibility.
-Input reports must be polled (no interrupt callbacks).
+Reflection recommended for write() compatibility
+Input reports must be polled.
+Button handling must treat 0xFF as release.
 
 Appendix A — LED Bitmask Diagram
 Code
@@ -124,15 +124,10 @@ Code
 | 0x80    | 0x40    | 0x20    | 0x10    | 0x08         |
 | unused  | unused  | ALL ON  | Link    | Tx           |
 +---------+---------+---------+---------+--------------+
-| Bit 2   | Bit 1   | Bit 0   |
-| 0x04    | 0x02    | 0x01    |
-| F1      | F2      | Rx      |
-+-----------------------------+
-
-Examples:
-  0x1F = Link + Tx + F1 + F2
-  0x20 = ALL LEDs ON (override)
-  0x00 = All off
+| Bit 2   | Bit 1   | Bit 0             |
+| 0x04    | 0x02    | 0x01              |
+| F1      | F2      | unused            |
++---------------------------------------+
 
 Appendix B — Input Report Flowchart
 Code
@@ -142,7 +137,7 @@ Code
                               |
                               v
                  +---------------------------+
-                 |  Is Report ID == 0x00 ?   |
+                 |  Report ID == 0x00 ?      |
                  +-----------+---------------+
                              | Yes
                              v
@@ -153,39 +148,28 @@ Code
                  +-----------+---------------+
                              |
                              v
-                 +---------------------------+
                  |   Emit knob event         |
-                 +---------------------------+
                              |
-                             v
                            (End)
 
                              |
                              | No
                              v
+
                  +---------------------------+
-                 |  Is Report ID == 0x01 ?   |
+                 |  Report ID == 0x01 ?      |
                  +-----------+---------------+
                              | Yes
                              v
                  +---------------------------+
-                 |   Read buffer[5] bitmask  |
-                 |   bit0 = TX               |
-                 |   bit1 = F1               |
-                 |   bit2 = F2               |
+                 |   Read buffer[5]          |
+                 |   TX = bit0 cleared       |
+                 |   F1 = bit1 cleared       |
+                 |   F2 = bit2 cleared       |
+                 |   Release = 0xFF          |
                  +-----------+---------------+
                              |
                              v
-                 +---------------------------+
-                 |   Active‑low decode       |
-                 |   Press = bit cleared     |
-                 |   Release = bit set       |
-                 +-----------+---------------+
+                 |   Emit button event       |
                              |
-                             v
-                 +---------------------------+
-                 |   Emit button events      |
-                 +---------------------------+
-                             |
-                             v
                            (End)
